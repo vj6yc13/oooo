@@ -1,3 +1,9 @@
+import sys
+import os
+
+# 현재 디렉토리를 Python 경로에 추가
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import argparse
 import threading
 import IPC_Library
@@ -5,6 +11,9 @@ import time
 import sys
 import os
 from IPC_Library import parse_hex_data, parse_string_data
+
+# 나머지 코드...
+
 
 GPIO_EXPORT_PATH = "/sys/class/gpio/export"
 GPIO_UNEXPORT_PATH = "/sys/class/gpio/unexport"
