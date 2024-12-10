@@ -31,6 +31,12 @@ received_pucData = []  # IPC에서 수신한 데이터 저장
 
 #추가부분
 
+# IPC_Library.py
+
+# IPC 명령 상수 정의
+TCC_IPC_CMD_CA72_EDUCATION_CAN_DEMO = 0x01  # 예시 값
+IPC_IPC_CMD_CA72_EDUCATION_CAN_DEMO_START = 0x02  # 예시 값
+
 def parse_hex_data(hex_string):
     """Hexadecimal string to byte array"""
     return bytearray.fromhex(hex_string)
@@ -38,6 +44,9 @@ def parse_hex_data(hex_string):
 def parse_string_data(string):
     """String to byte array"""
     return bytearray(string, 'utf-8')
+
+# 여기에 추가적인 IPC 관련 함수들을 정의하세요.
+
 
 
 # GPIO 유틸리티 함수
