@@ -29,6 +29,17 @@ IPC_START2 = 0xAA
 IPC_MAX_PACKET_SIZE = 0x400
 received_pucData = []  # IPC에서 수신한 데이터 저장
 
+#추가부분
+
+def parse_hex_data(hex_string):
+    """Hexadecimal string to byte array"""
+    return bytearray.fromhex(hex_string)
+
+def parse_string_data(string):
+    """String to byte array"""
+    return bytearray(string, 'utf-8')
+
+
 # GPIO 유틸리티 함수
 def is_gpio_exported(gpio_number):
     gpio_base_path = GPIO_BASE_PATH_TEMPLATE.format(gpio_number)
