@@ -73,9 +73,10 @@ def play_tone(gpio_number, frequency, duration):
 
 def ipc_listener(gpio_number):
     file_path = "/dev/tcc_ipc_micom"  # IPC 채널 파일 경로
-    IPC_Library.IPC_ReceivePacketFromIPCHeader(file_path, 1)  # IPC 패킷 수신
     
     while True:
+        IPC_Library.IPC_ReceivePacketFromIPCHeader(file_path)  # 인자 하나만 전달
+        
         if IPC_Library.received_pucData:
             print("Received IPC data:", ' '.join(format(byte, '02X') for byte in IPC_Library.received_pucData))
             # 수신된 데이터의 첫 번째 바이트에 따라 주파수를 설정
