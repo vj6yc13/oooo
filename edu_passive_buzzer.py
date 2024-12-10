@@ -1,8 +1,10 @@
+import argparse
+import threading
+import IPC_Library
+import time
 import sys
 import os
-import time
-import threading
-import IPC_Library  # IPC 라이브러리 임포트
+from IPC_Library import parse_hex_data, parse_string_data
 
 GPIO_EXPORT_PATH = "/sys/class/gpio/export"
 GPIO_UNEXPORT_PATH = "/sys/class/gpio/unexport"
@@ -11,14 +13,14 @@ GPIO_VALUE_PATH_TEMPLATE = "/sys/class/gpio/gpio{}/value"
 GPIO_BASE_PATH_TEMPLATE = "/sys/class/gpio/gpio{}"
 
 FREQUENCIES = {
-    'C': 261.63,  
-    'D': 293.66,  
-    'E': 329.63,  
-    'F': 349.23,  
-    'G': 392.00,  
-    'A': 440.00,  
-    'B': 493.88,  
-    'C5': 523.25  
+    1: 261.63,  # C
+    2: 293.66,  # D
+    3: 329.63,  # E
+    4: 349.23,  # F
+    5: 392.00,  # G
+    6: 440.00,  # A
+    7: 493.88,  # B
+    8: 523.25   # C5
 }
 
 def is_gpio_exported(gpio_number):
@@ -61,44 +63,103 @@ def set_gpio_value(gpio_number, value):
         sys.exit(1)
 
 def play_tone(gpio_number, frequency, duration):
+    if frequency <= 0:
+        print("Invalid frequency: Skipping tone")
+        return
+    
     period = 1.0 / frequency
     half_period = period / 2
     end_time = time.time() + duration
 
     while time.time() < end_time:
-        set_gpio_value(gpio_number, 1)  # 부저 울림
+        set_gpio_value(gpio_number, 1)
         time.sleep(half_period)
-        set_gpio_value(gpio_number, 0)  # 부저 끔
+        set_gpio_value(gpio_number, 0)
         time.sleep(half_period)
 
-def ipc_listener(gpio_number):
-    file_path = "/dev/tcc_ipc_micom"  # IPC 채널 파일 경로
-    
+def ipc_listener(gpio_pin):
     while True:
-        IPC_Library.IPC_ReceivePacketFromIPCHeader(file_path)  # 인자 하나만 전달
-        
         if IPC_Library.received_pucData:
-            print("Received IPC data:", ' '.join(format(byte, '02X') for byte in IPC_Library.received_pucData))
-            # 수신된 데이터의 첫 번째 바이트에 따라 주파수를 설정
-            note = chr(IPC_Library.received_pucData[0])  # 첫 번째 바이트를 문자로 변환
-            frequency = FREQUENCIES.get(note, 261.63)  # 기본 주파수는 'C'
-            print(f"Playing tone at {frequency} Hz")
-            play_tone(gpio_number, frequency, 0.5)  # 부저 울림
+            note = IPC_Library.received_pucData[0]  # 첫 번째 바이트로 음계 결정
+            duration = 0.5  # 기본 재생 시간
+            
+            if note in FREQUENCIES:
+                print(f"Playing tone for note {note} at frequency {FREQUENCIES[note]} Hz")
+                play_tone(gpio_pin, FREQUENCIES[note], duration)
+            else:
+                print(f"Received unknown note: {note}")
+            time.sleep(0.1)  # IPC 데이터 처리 후 잠시 대기
 
-if __name__ == "__main__":
-    gpio_pin = 18  # GPIO 18을 사용
+def sendtoCAN(channel, canId, sndDataHex):
+    sndData = parse_hex_data(sndDataHex)
+    uiLength = len(sndData)
+    ret = IPC_Library.IPC_SendPacketWithIPCHeader("/dev/tcc_ipc_micom", channel, IPC_Library.TCC_IPC_CMD_CA72_EDUCATION_CAN_DEMO, IPC_Library.IPC_IPC_CMD_CA72_EDUCATION_CAN_DEMO_START, canId, sndData, uiLength)
+    print(f"Data sent to CAN: {sndDataHex}, Return: {ret}")
+
+def receiveFromCAN():
+    micom_thread = threading.Thread(target=IPC_Library.IPC_ReceivePacketFromIPCHeader, args=("/dev/tcc_ipc_micom", 1))
+    micom_thread.start()
+
+def main():
+    parser = argparse.ArgumentParser(description="IPC Sender/Receiver")
+    parser.add_argument("mode", choices=["snd", "rev"], help="Specify 'snd' to send a packet or 'rev' to receive a packet.")
+    parser.add_argument("--file_path", default="/dev/tcc_ipc_micom", help="File path for IPC communication")
+    parser.add_argument("--channel", type=int, default=0, help="Specify the IPC channel.")
+    parser.add_argument("--uiCmd1", type=int, default=IPC_Library.TCC_IPC_CMD_CA72_EDUCATION_CAN_DEMO, help="Value for uiCmd1")
+    parser.add_argument("--uiCmd2", type=int, default=IPC_Library.IPC_IPC_CMD_CA72_EDUCATION_CAN_DEMO_START, help="Value for uiCmd2")
+    parser.add_argument("--uiCmd3", type=int, default=1, help="Value for uiCmd3")
+    parser.add_argument("--sndDataHex", type=str, help="Value for sndData as a hex string, e.g., '12345678'")
+    parser.add_argument("--sndDataStr", type=str, help="Value for sndData as a string, e.g., 'Hello!!!'")
+    parser.add_argument("--defaultHex", type=str, default="12345678", help="Default hex data if no sndDataHex provided")
+
+    args = parser.parse_args()
+    print(f"args.mode {args.mode} args.file_path {args.file_path} args.channel {args.channel}")
+
+    gpio_pin = 89  # GPIO 핀 번호 설정 (음성 출력을 위한 핀)
 
     try:
         export_gpio(gpio_pin)
         set_gpio_direction(gpio_pin, "out")
 
-        # IPC 리스너 스레드 시작
-        ipc_thread = threading.Thread(target=ipc_listener, args=(gpio_pin,), daemon=True)
-        ipc_thread.start()
+        if args.mode == "snd":
+            if args.uiCmd1 is None or args.uiCmd2 is None:
+                print("Please provide values for uiCmd1 and uiCmd2.")
+                return
 
-        # 메인 루프
-        while True:
-            time.sleep(1)  # 다른 작업을 수행할 수 있는 공간
+            uiCmd1 = args.uiCmd1
+            uiCmd2 = args.uiCmd2
+            uiCmd3 = args.uiCmd3
+
+            if args.sndDataHex:
+                sndData = IPC_Library.parse_hex_data(args.sndDataHex)
+            elif args.sndDataStr:
+                sndData = IPC_Library.parse_string_data(args.sndDataStr)
+            else:
+                sndData = IPC_Library.parse_hex_data(args.defaultHex)
+
+            uiLength = len(sndData)
+
+            print(f"file_path: {args.file_path}")
+            print(f"channel: {args.channel}")
+            print(f"uiCmd1: {uiCmd1}")
+            print(f"uiCmd2: {uiCmd2}")
+            print(f"uiCmd3: {uiCmd3}") 
+            print(f"sndData: {sndData}")
+            print(f"uiLength: {uiLength}")
+
+            sendtoCAN(args.channel, uiCmd1, args.sndDataHex)  # 송신 데이터 처리
+
+        elif args.mode == "rev":
+            # IPC 수신 처리 스레드 시작
+            micom_thread = threading.Thread(target=IPC_Library.IPC_ReceivePacketFromIPCHeader, args=("/dev/tcc_ipc_micom", 1))
+            micom_thread.start()
+
+            # IPC 데이터를 통해 음을 재생하는 부분
+            ipc_listener(gpio_pin)
+
+        else:
+            print("Invalid mode. Use 'snd' or 'rev'.")
+            return
 
     except KeyboardInterrupt:
         print("\nOperation stopped by User")
@@ -108,3 +169,7 @@ if __name__ == "__main__":
         unexport_gpio(gpio_pin)
 
     sys.exit(0)
+
+if __name__ == "__main__":
+    main()
+
